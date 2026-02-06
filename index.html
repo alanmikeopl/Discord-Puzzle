@@ -396,11 +396,21 @@
     <div id="startModal" class="modal-overlay">
         <div class="card">
             <h1>OpenLedger Word Hunt</h1>
-            <p style="color: rgba(255,255,255,0.6); margin-top: 0.5rem;">Prove you're smarter than a random number
-                generator.</p>
+            <p style="color: rgba(255,255,255,0.6); margin-top: 0.5rem; margin-bottom: 1.5rem;">Prove you're smarter
+                than a random number generator.</p>
+
+            <div class="instructions-mini"
+                style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 6px; margin-bottom: 1.5rem; text-align: left; font-size: 0.9rem;">
+                <strong style="color: var(--primary); display: block; margin-bottom: 0.5rem;">HOW TO PLAY:</strong>
+                <ul style="padding-left: 1.2rem; color: rgba(255,255,255,0.8); line-height: 1.5;">
+                    <li>Tap letters to highlight them.</li>
+                    <li>Highlight all letters of a word to find it.</li>
+                    <li>Timer starts <b>immediately</b> when you click Play!</li>
+                </ul>
+            </div>
 
             <div class="input-group">
-                <input type="text" id="playerName" placeholder="Enter your discord ID, human" maxlength="15"
+                <input type="text" id="playerName" placeholder="Enter your discord ID, human" maxlength="20"
                     autocomplete="off">
             </div>
 
@@ -420,6 +430,10 @@
 
                 <div class="stat-label">Execution Time</div>
                 <div class="stat-value" style="color: var(--primary);" id="victoryTime">00:00</div>
+
+                <div class="stat-label" style="margin-top: 1rem;">Verification Hash</div>
+                <div class="stat-value" style="font-size: 0.9rem; font-family: monospace; color: rgba(255,255,255,0.4);"
+                    id="victoryHash">GENERATING...</div>
             </div>
 
             <p style="font-size: 0.9rem; color: #fff;">Beat the timer and Prove your worth.</p>
@@ -448,31 +462,30 @@
                 <div id="grid" class="word-grid"></div>
             </div>
         </div>
-
-        <!-- Right Instructions -->
-        <div class="right-panel">
-            <div class="instruction-card">
-                <h3>How to Play</h3>
-                <p>Tap or click letters to highlight them.</p>
-                <p style="margin-top: 1rem; color: rgba(255,255,255,0.4); font-size: 0.8rem;">
-                    Find all the words from the list to win.
-                </p>
-            </div>
-        </div>
     </div>
 
     <script>
         // Encapsulate Game Logic to prevent simple console tampering
         (function () {
+            const WORD_POOL = [
+                'OPENLEDGER', 'DATANET', 'ATTRIBUTION', 'VERIFIABLE', 'AGENT', 'MODEL', 'EXECUTION', 'ACCOUNTABLE',
+                'LEDGER', 'OPEN', 'PROOF', 'DATA', 'TRACEABLE', 'ONCHAIN', 'DECENTRALIZED', 'INFERENCE', 'COMPUTE',
+                'SCHEMA', 'VALIDATION', 'PIPELINE', 'ORACLE', 'CONSENSUS', 'INTEGRITY', 'TRANSPARENT', 'AUDITABLE',
+                'SECURE', 'PERMISSIONLESS', 'GRAPH', 'PROVENANCE', 'SIGNATURE', 'REGISTRY', 'INDEXING', 'LOGS',
+                'METADATA', 'NETWORK', 'EXECUTOR', 'CREDIBILITY', 'FINALITY'
+            ];
+
+            function selectRandomWords(count) {
+                const shuffled = [...WORD_POOL].sort(() => 0.5 - Math.random());
+                return shuffled.slice(0, count);
+            }
+
             const GameState = {
                 running: false,
                 startTime: 0,
                 endTime: 0,
                 playerName: '',
-                words: [
-                    'OPENLEDGER', 'DATANET', 'ATTRIBUTION', 'VERIFIABLE',
-                    'AGENT', 'MODEL', 'EXECUTION', 'ACCOUNTABLE'
-                ],
+                words: selectRandomWords(8),
                 solutions: [], // { word: "X", coords: ["r-c", ...] }
                 foundCount: 0,
                 gridSize: 14
@@ -488,7 +501,8 @@
                 grid: document.getElementById('grid'),
                 wordList: document.getElementById('wordList'),
                 vicName: document.getElementById('victoryName'),
-                vicTime: document.getElementById('victoryTime')
+                vicTime: document.getElementById('victoryTime'),
+                vicHash: document.getElementById('victoryHash')
             };
 
             // --- Security / Timer ---
@@ -504,9 +518,70 @@
                 els.timer.textContent = `${m}:${s}`;
             }
 
+            // --- Crypto & Backend ---
+            async function generateVerificationHash(name, timeStr) {
+                // In a real app, this secret should be on the server. 
+                // For this client-side demo, it helps prevent lazy photoshop edits.
+                const secret = "OPENLEDGER_PROTOCOL_V1";
+                const data = `${name}:${timeStr}:${secret}`;
+
+                const msgBuffer = new TextEncoder().encode(data);
+                const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+                const hashArray = Array.from(new Uint8Array(hashBuffer));
+                // Return first 12 chars of hex hash
+                return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16).toUpperCase();
+            }
+
+            function sendBackendData(name, timeStr, hash) {
+                const FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSeP2nTr5v1l40i_G7bZ9Uwd7HgpEcN-8r8z6sgbN7cu6dnqyw/formResponse';
+
+                // Create a hidden iframe to function as the target
+                const iframeId = 'hidden_submission_iframe';
+                let iframe = document.getElementById(iframeId);
+                if (!iframe) {
+                    iframe = document.createElement('iframe');
+                    iframe.id = iframeId;
+                    iframe.name = iframeId; // Crucial for target
+                    iframe.style.display = 'none';
+                    document.body.appendChild(iframe);
+                }
+
+                // Create a form to submit
+                const form = document.createElement('form');
+                form.action = FORM_URL;
+                form.method = 'POST';
+                form.target = iframeId; // Submit result goes to hidden iframe
+                form.style.display = 'none';
+
+                // Add Fields
+                const fields = {
+                    'entry.1372685859': name,      // Discord ID
+                    'entry.1445677028': timeStr,   // Time
+                    'entry.272009412': hash        // Hash
+                };
+
+                for (const [key, value] of Object.entries(fields)) {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = key;
+                    input.value = value;
+                    form.appendChild(input);
+                }
+
+                document.body.appendChild(form);
+                form.submit(); // Fire!
+
+                // Cleanup form after a moment
+                setTimeout(() => {
+                    document.body.removeChild(form);
+                    console.log("Score submitted via iframe!");
+                }, 1000);
+            }
+
             // --- Game Logic ---
             function initGame() {
                 const name = els.inputName.value.trim();
+                // Basic validation
                 if (!name) {
                     alert('Hey! We need a name. Don\'t be shy.');
                     return;
@@ -523,7 +598,7 @@
                 renderWordList();
             }
 
-            function stopGame() {
+            async function stopGame() {
                 GameState.running = false;
                 GameState.endTime = Date.now();
                 clearInterval(timerInterval);
@@ -533,9 +608,16 @@
                 const s = (totalSeconds % 60).toString().padStart(2, '0');
                 const finalTime = `${m}:${s}`;
 
+                // Generate Hash
+                const hash = await generateVerificationHash(GameState.playerName, finalTime);
+
                 // Populate Victory Card
                 els.vicName.textContent = GameState.playerName;
                 els.vicTime.textContent = finalTime;
+                els.vicHash.textContent = hash;
+
+                // Send to Backend
+                sendBackendData(GameState.playerName, finalTime, hash);
 
                 // Show Victory
                 setTimeout(() => {
